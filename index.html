@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>さくらマラソンマップ</title>
+  <style>
+    :root {
+      --bg: #fffaf5;
+      --panel: rgba(255, 255, 255, 0.94);
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #d9465f;
+      --accent-soft: #ffe2e7;
+      --border: rgba(31, 41, 55, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Hiragino Sans", "Yu Gothic", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, rgba(217, 70, 95, 0.16), transparent 22rem),
+        linear-gradient(180deg, #fffdf9 0%, var(--bg) 100%);
+    }
+
+    main {
+      width: min(1100px, calc(100% - 24px));
+      margin: 0 auto;
+      padding: 20px 0 32px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.8rem, 3vw, 2.6rem);
+      line-height: 1.1;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .panel {
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 18px 40px rgba(31, 41, 55, 0.08);
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .chip::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    csv-map {
+      display: block;
+      margin-top: 18px;
+      overflow: hidden;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      box-shadow: 0 22px 50px rgba(31, 41, 55, 0.12);
+      background: #fff;
+    }
+
+    .footer {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .footer a {
+      color: inherit;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <h1 id="title">さくらマラソンマップ</h1>
+      <p class="lead" id="description">KML コースデータを読み込み中です。</p>
+      <div class="meta">
+        <span class="chip">KML コース表示</span>
+        <span>地図エンジン: <a href="https://code4fukui.github.io/csv-map/">csv-map.js</a></span>
+        <span>ベースマップ: 国土地理院</span>
+      </div>
+    </section>
+
+    <script type="module" src="https://code4fukui.github.io/csv-map/csv-map.js"></script>
+    <csv-map id="map" height="72vh" useimage="false" color="red"></csv-map>
+
+    <p class="footer">
+      データ: <a href="./fukui-marathon2026.kml">fukui-marathon2026.kml</a>
+    </p>
+  </main>
+
+  <script type="module">
+    import L from "https://code4sabae.github.io/leaflet-mjs/leaflet.mjs";
+
+    const kmlPath = "./fukui-marathon2026.kml";
+    const mapEl = document.querySelector("#map");
+    const titleEl = document.querySelector("#title");
+    const descriptionEl = document.querySelector("#description");
+
+    const firstElement = (parent, name) => {
+      if (!parent) return null;
+      for (const node of parent.children) {
+        if (node.localName === name) {
+          return node;
+        }
+      }
+      return null;
+    };
+
+    const firstDescendant = (parent, ...names) => {
+      let current = parent;
+      for (const name of names) {
+        if (!current) return null;
+        current = firstElement(current, name);
+      }
+      return current;
+    };
+
+    const text = (parent, ...names) => {
+      const node = firstDescendant(parent, ...names);
+      return node ? node.textContent.trim() : "";
+    };
+
+    const parseCoordinates = (value) => {
+      return value
+        .trim()
+        .split(/\s+/)
+        .map((line) => line.split(",").map((v) => Number(v.trim())))
+        .filter((coords) => Number.isFinite(coords[0]) && Number.isFinite(coords[1]))
+        .map(([lng, lat, alt = 0]) => ({ lat, lng, alt }));
+    };
+
+    const kmlColorToCss = (value, fallback = "#d9465f") => {
+      if (!value || value.length !== 8) return fallback;
+      const rr = value.slice(6, 8);
+      const gg = value.slice(4, 6);
+      const bb = value.slice(2, 4);
+      return `#${rr}${gg}${bb}`;
+    };
+
+    const kmlColorToOpacity = (value, fallback = 0.9) => {
+      if (!value || value.length !== 8) return fallback;
+      const alpha = Number.parseInt(value.slice(0, 2), 16);
+      return Number.isFinite(alpha) ? alpha / 255 : fallback;
+    };
+
+    const buildStyles = (xml) => {
+      const directStyles = new Map();
+      for (const style of Array.from(xml.getElementsByTagNameNS("*", "Style")).filter((node) => node.getAttribute("id"))) {
+        directStyles.set(`#${style.getAttribute("id")}`, {
+          lineColor: text(style, "LineStyle", "color"),
+          lineWidth: Number(text(style, "LineStyle", "width")) || 6,
+        });
+      }
+
+      const resolvedStyles = new Map(directStyles);
+      for (const styleMap of Array.from(xml.getElementsByTagNameNS("*", "StyleMap")).filter((node) => node.getAttribute("id"))) {
+        const pair = Array.from(styleMap.getElementsByTagNameNS("*", "Pair")).find((item) => text(item, "key") === "normal");
+        const ref = pair ? text(pair, "styleUrl") : "";
+        const style = directStyles.get(ref);
+        if (style) {
+          resolvedStyles.set(`#${styleMap.getAttribute("id")}`, style);
+        }
+      }
+      return resolvedStyles;
+    };
+
+    const parseKML = (xmlText) => {
+      const xml = new DOMParser().parseFromString(xmlText, "application/xml");
+      const documentNode = xml.getElementsByTagNameNS("*", "Document")[0];
+      const styles = buildStyles(xml);
+      const points = [];
+      const lines = [];
+
+      for (const placemark of xml.getElementsByTagNameNS("*", "Placemark")) {
+        const name = text(placemark, "name");
+        const description = text(placemark, "description") || text(documentNode, "description");
+        const style = styles.get(text(placemark, "styleUrl")) || {};
+
+        const pointCoordinates = text(placemark, "Point", "coordinates");
+        if (pointCoordinates) {
+          const [first] = parseCoordinates(pointCoordinates);
+          if (first) {
+            points.push({
+              name,
+              description,
+              latitude: first.lat,
+              longitude: first.lng,
+              color: "red",
+            });
+          }
+        }
+
+        const lineCoordinates = text(placemark, "LineString", "coordinates");
+        if (lineCoordinates) {
+          lines.push({
+            name,
+            description,
+            coordinates: parseCoordinates(lineCoordinates),
+            color: kmlColorToCss(style.lineColor),
+            opacity: kmlColorToOpacity(style.lineColor),
+            width: style.lineWidth || 6,
+          });
+        }
+      }
+
+      return {
+        title: text(documentNode, "name"),
+        description: text(documentNode, "description"),
+        points,
+        lines,
+      };
+    };
+
+    const waitForMap = async (element) => {
+      await customElements.whenDefined("csv-map");
+      for (let i = 0; i < 100; i++) {
+        if (element.map) return element.map;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error("csv-map initialization timed out");
+    };
+
+    const render = async () => {
+      const response = await fetch(kmlPath);
+      const xmlText = await response.text();
+      const data = parseKML(xmlText);
+
+      titleEl.textContent = data.title || "さくらマラソンマップ";
+      descriptionEl.textContent = data.description || "KML コースデータ";
+
+      const map = await waitForMap(mapEl);
+      mapEl.value = data.points;
+
+      const bounds = [];
+      for (const line of data.lines) {
+        const latlngs = line.coordinates.map((coord) => [coord.lat, coord.lng]);
+        if (!latlngs.length) continue;
+        bounds.push(...latlngs);
+        const polyline = L.polyline(latlngs, {
+          color: line.color,
+          opacity: line.opacity,
+          weight: line.width,
+        }).addTo(map);
+        const popup = `
+          <strong>${line.name || "コース"}</strong><br>
+          ${line.description || ""}
+        `;
+        polyline.bindPopup(popup);
+      }
+
+      for (const point of data.points) {
+        bounds.push([point.latitude, point.longitude]);
+      }
+      if (bounds.length) {
+        map.fitBounds(bounds, { padding: [24, 24] });
+      }
+    };
+
+    render().catch((error) => {
+      console.error(error);
+      descriptionEl.textContent = "KML の読み込みに失敗しました。";
+    });
+  </script>
+</body>
+</html>
