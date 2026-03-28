@@ -13,6 +13,8 @@
       --accent: #d9465f;
       --accent-soft: #ffe2e7;
       --border: rgba(31, 41, 55, 0.12);
+      --traffic: #0f766e;
+      --traffic-soft: #d9f5f1;
     }
 
     * {
@@ -81,7 +83,80 @@
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: var(--accent);
+      background: currentColor;
+    }
+
+    .chip.traffic {
+      background: var(--traffic-soft);
+      color: var(--traffic);
+    }
+
+    .traffic-panel {
+      margin-top: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .toolbar label,
+    .status,
+    .source {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    select,
+    button {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+    }
+
+    select {
+      min-width: 140px;
+    }
+
+    button {
+      cursor: pointer;
+      background: linear-gradient(180deg, #fff 0%, #fff6f7 100%);
+    }
+
+    button:disabled,
+    select:disabled {
+      opacity: 0.5;
+      cursor: wait;
+    }
+
+    .timeline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .time-chip {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--muted);
+      transition: 0.2s ease;
+    }
+
+    .time-chip.is-active {
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--traffic) 0%, #0891b2 100%);
+      color: #fff;
+      box-shadow: 0 10px 24px rgba(8, 145, 178, 0.24);
     }
 
     csv-map {
@@ -100,7 +175,9 @@
       font-size: 0.92rem;
     }
 
-    .footer a {
+    .footer a,
+    .meta a,
+    .source a {
       color: inherit;
     }
   </style>
@@ -111,34 +188,120 @@
       <h1 id="title">さくらマラソンマップ</h1>
       <p class="lead" id="description">KML コースデータを読み込み中です。</p>
       <div class="meta">
+      <!--
         <span class="chip">KML コース表示</span>
+        <span class="chip traffic">時間帯別交通規制</span>
+      -->
         <span>地図エンジン: <a href="https://code4fukui.github.io/csv-map/">csv-map.js</a></span>
-        <span>ベースマップ: 国土地理院</span>
+        <span>ベースマップ: <a href=https://www.gsi.go.jp/>国土地理院</a></span>
       </div>
     </section>
 
     <script type="module" src="https://code4fukui.github.io/csv-map/csv-map.js"></script>
     <csv-map id="map" height="72vh" useimage="false" color="red"></csv-map>
 
+    <section class="panel traffic-panel">
+      <div class="toolbar">
+        <label for="time-select">時間帯</label>
+        <select id="time-select" aria-label="交通規制時間"></select>
+        <button id="fit-traffic" type="button">この時間帯へ移動</button>
+        <span class="status" id="traffic-status">交通規制データを準備中です。</span>
+      </div>
+      <div class="timeline" id="timeline"></div>
+      <div class="source">
+        出典:
+        <a href="https://www.fukui-sakura-marathon.jp/traffic/detour.html">交通規制 地区別う回路図・時間別規制図</a>
+      </div>
+    </section>
+
     <p class="footer">
-      データ: <a href="./fukui-marathon2026.kml">fukui-marathon2026.kml</a>
+      データ:
+      <a href="./fukui-marathon2026.kml">fukui-marathon2026.kml</a> /
+      <a href="https://www.fukui-sakura-marathon.jp/traffic/detour.html">公式の時間別規制図</a>
     </p>
   </main>
 
   <script type="module">
     import L from "https://code4sabae.github.io/leaflet-mjs/leaflet.mjs";
 
-    const kmlPath = "./fukui-marathon2026.kml";
+    const courseKmlPath = "./fukui-marathon2026.kml";
+    const trafficTimes = [
+      ["6:30", "1rgm08CIcLP-nxCOghjsRMFd_jPTh_gA"],
+      ["7:00", "19fu6JZaVEQZTCsBtfm_N6JasT4RQ7UU"],
+      ["8:00", "1ZscCGDaQD7lKvQsZXXDR7A9omqKnV-I"],
+      ["8:10", "1sOFsH4mNfLWJOOiyMmVS6j8F7pO1vcM"],
+      ["8:15", "15nSG9ng2OQX2563UvfFSwIhy1FvKqRo"],
+      ["8:25", "1WrXTp0ehpfy-J596tHZbLUu0RmPauqE"],
+      ["8:35", "1lusduY5JTa2ZYkvyt5kUX9SoH7Ra7Sw"],
+      ["8:45", "19g63ENwoYmncL0Oj78M5tKFE-fCxFZ8"],
+      ["9:00", "1HyAz9kFCrlTEQztE4lyKCS5EDIx9VtQ"],
+      ["9:05", "18HyVP3ehTjJ43PGIeIBR9poCKE9kQo4"],
+      ["9:20", "1IyjvrAgqpSY9DrsuanoGJKC_Y71Yym0"],
+      ["9:25", "1hN_7Py4Y8tvMvWwQeURC49AZ-wXLApE"],
+      ["9:35", "10f8C1f5XGTEvNOkmdJ_PL1-VJ7l1hdc"],
+      ["9:40", "1LOn_ydc3lGZnuDHRe0K-9WVtq5pEsX0"],
+      ["9:50", "109IjShX6CZHHvqFvk1jt-yarJOVFeGo"],
+      ["10:00", "1N_b6kaDEaw76Ih1RLskC0HWWecGSrj4"],
+      ["10:05", "1tOLhtNSycbEx5U5HxSEb26g02IW8qiw"],
+      ["10:10", "1IlcnnsEfB4pSAPTnJOp-Q2I8pkhcZ3A"],
+      ["10:15", "1LMcf7Uw8DwEpuwqZE4jlZnLDKNelkFc"],
+      ["10:40", "135W5Xa0Hrdaro17VOiwX2QatCkF59q8"],
+      ["11:50", "1kpq0KUT0I27NSM-Vn8Qgl9DlmVvX5mM"],
+      ["12:25", "1fAS52bID2dCaZResjQBsBa0cZ7qXP4M"],
+      ["12:30", "127nn1XejhVyRpXYufVz4J9y1vpz2DYU"],
+      ["12:50", "1VCqZ04-5APAVJ-k9KYabFeTnyY-10WY"],
+      ["13:00", "1Jvx-BbXp8-d1xf159Q79lkOVuQMfRoo"],
+      ["13:25", "1iCevE_beo1XyDIeqdxL7REEFgTimaB0"],
+      ["13:55", "1eJtlD_KdfuJmeDn_bC5sQ-OlpvlU7uY"],
+      ["14:10", "163cGZEI7BFkZ7nWudxW9eMYYuf2O7EA"],
+      ["14:40", "1580eBUQKD5e4F7q25Fr8_xYSeZEutUI"],
+      ["15:00", "1dK3haI_pQK71uZdV5Y08CakAVZkBEa0"],
+      ["15:30", "1yf1IVfCPiIEftLm2hho7WwtvDv79GLw"],
+      ["15:45", "13k7JdZcbhqfHojU7_7NTWveE5JGIbWI"],
+      ["16:30", "1--jx-s9PJIK3aT2Ubddmac5IcnNs0X4"],
+    ].map(([time, mid]) => ({
+      time,
+      mid,
+      mapURL: `https://www.google.com/maps/d/edit?hl=ja&mid=${mid}`,
+      kmlURL: `https://www.google.com/maps/d/kml?mid=${mid}&forcekml=1`,
+    }));
+
     const mapEl = document.querySelector("#map");
     const titleEl = document.querySelector("#title");
     const descriptionEl = document.querySelector("#description");
+    const timeSelectEl = document.querySelector("#time-select");
+    const timelineEl = document.querySelector("#timeline");
+    const trafficStatusEl = document.querySelector("#traffic-status");
+    const fitTrafficButton = document.querySelector("#fit-traffic");
+
+    const trafficCache = new Map();
+    let map;
+    let courseBounds = [];
+    let trafficBounds = [];
+    let trafficLayer;
+    const pickCurrentTrafficTime = () => {
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      let selected = trafficTimes[0].time;
+
+      for (const item of trafficTimes) {
+        const [hours, minutes] = item.time.split(":").map(Number);
+        const itemMinutes = hours * 60 + minutes;
+        if (itemMinutes <= currentMinutes) {
+          selected = item.time;
+        } else {
+          break;
+        }
+      }
+      return selected;
+    };
+
+    let currentTime = pickCurrentTrafficTime();
 
     const firstElement = (parent, name) => {
       if (!parent) return null;
       for (const node of parent.children) {
-        if (node.localName === name) {
-          return node;
-        }
+        if (node.localName === name) return node;
       }
       return null;
     };
@@ -155,6 +318,14 @@
     const text = (parent, ...names) => {
       const node = firstDescendant(parent, ...names);
       return node ? node.textContent.trim() : "";
+    };
+
+    const htmlEscape = (value = "") => {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
     };
 
     const parseCoordinates = (value) => {
@@ -186,6 +357,7 @@
         directStyles.set(`#${style.getAttribute("id")}`, {
           lineColor: text(style, "LineStyle", "color"),
           lineWidth: Number(text(style, "LineStyle", "width")) || 6,
+          polyColor: text(style, "PolyStyle", "color"),
         });
       }
 
@@ -201,50 +373,42 @@
       return resolvedStyles;
     };
 
+    const collectGeometry = (node, style, bucket) => {
+      for (const child of node.children) {
+        if (child.localName === "Point") {
+          const [point] = parseCoordinates(text(child, "coordinates"));
+          if (point) bucket.points.push(point);
+        } else if (child.localName === "LineString") {
+          const coords = parseCoordinates(text(child, "coordinates"));
+          if (coords.length) bucket.lines.push({ coordinates: coords, style });
+        } else if (child.localName === "Polygon") {
+          const coords = parseCoordinates(text(child, "outerBoundaryIs", "LinearRing", "coordinates"));
+          if (coords.length) bucket.polygons.push({ coordinates: coords, style });
+        } else if (child.localName === "MultiGeometry") {
+          collectGeometry(child, style, bucket);
+        }
+      }
+    };
+
     const parseKML = (xmlText) => {
       const xml = new DOMParser().parseFromString(xmlText, "application/xml");
       const documentNode = xml.getElementsByTagNameNS("*", "Document")[0];
       const styles = buildStyles(xml);
-      const points = [];
-      const lines = [];
+      const placemarks = [];
 
       for (const placemark of xml.getElementsByTagNameNS("*", "Placemark")) {
         const name = text(placemark, "name");
         const description = text(placemark, "description") || text(documentNode, "description");
         const style = styles.get(text(placemark, "styleUrl")) || {};
-
-        const pointCoordinates = text(placemark, "Point", "coordinates");
-        if (pointCoordinates) {
-          const [first] = parseCoordinates(pointCoordinates);
-          if (first) {
-            points.push({
-              name,
-              description,
-              latitude: first.lat,
-              longitude: first.lng,
-              color: "red",
-            });
-          }
-        }
-
-        const lineCoordinates = text(placemark, "LineString", "coordinates");
-        if (lineCoordinates) {
-          lines.push({
-            name,
-            description,
-            coordinates: parseCoordinates(lineCoordinates),
-            color: kmlColorToCss(style.lineColor),
-            opacity: kmlColorToOpacity(style.lineColor),
-            width: style.lineWidth || 6,
-          });
-        }
+        const geometry = { points: [], lines: [], polygons: [] };
+        collectGeometry(placemark, style, geometry);
+        placemarks.push({ name, description, style, ...geometry });
       }
 
       return {
         title: text(documentNode, "name"),
         description: text(documentNode, "description"),
-        points,
-        lines,
+        placemarks,
       };
     };
 
@@ -257,45 +421,228 @@
       throw new Error("csv-map initialization timed out");
     };
 
-    const render = async () => {
-      const response = await fetch(kmlPath);
-      const xmlText = await response.text();
-      const data = parseKML(xmlText);
-
-      titleEl.textContent = data.title || "さくらマラソンマップ";
-      descriptionEl.textContent = data.description || "KML コースデータ";
-
-      const map = await waitForMap(mapEl);
-      mapEl.value = data.points;
-
+    const collectBounds = (placemarks) => {
       const bounds = [];
-      for (const line of data.lines) {
-        const latlngs = line.coordinates.map((coord) => [coord.lat, coord.lng]);
-        if (!latlngs.length) continue;
-        bounds.push(...latlngs);
-        const polyline = L.polyline(latlngs, {
-          color: line.color,
-          opacity: line.opacity,
-          weight: line.width,
-        }).addTo(map);
-        const popup = `
-          <strong>${line.name || "コース"}</strong><br>
-          ${line.description || ""}
+      for (const placemark of placemarks) {
+        for (const point of placemark.points) {
+          bounds.push([point.lat, point.lng]);
+        }
+        for (const line of placemark.lines) {
+          bounds.push(...line.coordinates.map((coord) => [coord.lat, coord.lng]));
+        }
+        for (const polygon of placemark.polygons) {
+          bounds.push(...polygon.coordinates.map((coord) => [coord.lat, coord.lng]));
+        }
+      }
+      return bounds;
+    };
+
+    const drawPlacemarkLayer = (targetMap, placemarks, options = {}) => {
+      const layer = L.layerGroup();
+      const bounds = [];
+      const lineFallback = options.lineFallback || "#d9465f";
+      const pointColor = options.pointColor || "#b91c1c";
+      const pointRadius = options.pointRadius || 7;
+
+      for (const placemark of placemarks) {
+        const popupHtml = `
+          <strong>${htmlEscape(placemark.name || "名称なし")}</strong><br>
+          ${htmlEscape(placemark.description || "")}
         `;
-        polyline.bindPopup(popup);
+
+        for (const point of placemark.points) {
+          const circle = L.circleMarker([point.lat, point.lng], {
+            radius: pointRadius,
+            color: pointColor,
+            fillColor: pointColor,
+            fillOpacity: 0.9,
+            weight: 2,
+          });
+          circle.bindPopup(popupHtml);
+          layer.addLayer(circle);
+          bounds.push([point.lat, point.lng]);
+        }
+
+        for (const line of placemark.lines) {
+          const latlngs = line.coordinates.map((coord) => [coord.lat, coord.lng]);
+          const polyline = L.polyline(latlngs, {
+            color: kmlColorToCss(line.style.lineColor, lineFallback),
+            opacity: kmlColorToOpacity(line.style.lineColor, 0.92),
+            weight: line.style.lineWidth || 6,
+          });
+          polyline.bindPopup(popupHtml);
+          layer.addLayer(polyline);
+          bounds.push(...latlngs);
+        }
+
+        for (const polygon of placemark.polygons) {
+          const latlngs = polygon.coordinates.map((coord) => [coord.lat, coord.lng]);
+          const color = kmlColorToCss(polygon.style.polyColor || polygon.style.lineColor, lineFallback);
+          const polygonLayer = L.polygon(latlngs, {
+            color,
+            fillColor: color,
+            fillOpacity: 0.2,
+            opacity: kmlColorToOpacity(polygon.style.polyColor || polygon.style.lineColor, 0.9),
+            weight: polygon.style.lineWidth || 4,
+          });
+          polygonLayer.bindPopup(popupHtml);
+          layer.addLayer(polygonLayer);
+          bounds.push(...latlngs);
+        }
       }
 
-      for (const point of data.points) {
-        bounds.push([point.latitude, point.longitude]);
+      layer.addTo(targetMap);
+      return { layer, bounds };
+    };
+
+    const setTrafficStatus = (message) => {
+      trafficStatusEl.textContent = message;
+    };
+
+    const setTrafficControlsState = (disabled) => {
+      timeSelectEl.disabled = disabled;
+      fitTrafficButton.disabled = disabled;
+      for (const button of timelineEl.querySelectorAll("button")) {
+        button.disabled = disabled;
       }
-      if (bounds.length) {
-        map.fitBounds(bounds, { padding: [24, 24] });
+    };
+
+    const updateActiveTimeUI = (time) => {
+      currentTime = time;
+      timeSelectEl.value = time;
+      for (const button of timelineEl.querySelectorAll("button")) {
+        button.classList.toggle("is-active", button.dataset.time === time);
       }
+    };
+
+    const findTrafficConfig = (time) => {
+      return trafficTimes.find((item) => item.time === time);
+    };
+
+    const loadTrafficKML = async (time) => {
+      const config = findTrafficConfig(time);
+      if (!config) throw new Error(`unknown traffic time: ${time}`);
+      if (trafficCache.has(time)) return trafficCache.get(time);
+
+      const response = await fetch(config.kmlURL);
+      if (!response.ok) {
+        throw new Error(`failed to fetch traffic KML: ${response.status}`);
+      }
+      const xmlText = await response.text();
+      const parsed = parseKML(xmlText);
+      trafficCache.set(time, parsed);
+      return parsed;
+    };
+
+    const showTraffic = async (time, fit = false) => {
+      updateActiveTimeUI(time);
+      setTrafficControlsState(true);
+      setTrafficStatus(`${time} の交通規制を読み込み中です。`);
+
+      try {
+        const trafficData = await loadTrafficKML(time);
+        if (trafficLayer) {
+          map.removeLayer(trafficLayer);
+        }
+        const rendered = drawPlacemarkLayer(map, trafficData.placemarks, {
+          lineFallback: "#0f766e",
+          pointColor: "#0f766e",
+          pointRadius: 6,
+        });
+        trafficLayer = rendered.layer;
+        trafficBounds = rendered.bounds;
+        const count = trafficData.placemarks.filter((placemark) =>
+          placemark.points.length || placemark.lines.length || placemark.polygons.length
+        ).length;
+        setTrafficStatus(`${time} の交通規制 ${count} 件を表示中です。`);
+        if (fit && trafficBounds.length) {
+          map.fitBounds(trafficBounds, { padding: [32, 32] });
+        }
+      } catch (error) {
+        console.error(error);
+        setTrafficStatus(`${time} の交通規制を読み込めませんでした。`);
+      } finally {
+        setTrafficControlsState(false);
+      }
+    };
+
+    const setupTrafficUI = () => {
+      for (const item of trafficTimes) {
+        const option = document.createElement("option");
+        option.value = item.time;
+        option.textContent = item.time;
+        timeSelectEl.appendChild(option);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "time-chip";
+        button.textContent = item.time;
+        button.dataset.time = item.time;
+        button.addEventListener("click", () => {
+          showTraffic(item.time, false);
+        });
+        timelineEl.appendChild(button);
+      }
+
+      timeSelectEl.addEventListener("change", () => {
+        showTraffic(timeSelectEl.value, false);
+      });
+      fitTrafficButton.addEventListener("click", () => {
+        if (trafficBounds.length) {
+          map.fitBounds(trafficBounds, { padding: [32, 32] });
+        }
+      });
+      updateActiveTimeUI(currentTime);
+    };
+
+    const render = async () => {
+      setupTrafficUI();
+
+      const response = await fetch(courseKmlPath);
+      const xmlText = await response.text();
+      const courseData = parseKML(xmlText);
+
+      titleEl.textContent = "ふくい桜マラソン2026"; //courseData.title || "さくらマラソンマップ";
+      descriptionEl.textContent = `データ出展: ${courseData.description || "KML コースデータ"} / 交通規制は 2026年3月29日 の時間別規制図を切替表示`;
+
+      map = await waitForMap(mapEl);
+
+      const coursePoints = [];
+      for (const placemark of courseData.placemarks) {
+        for (const point of placemark.points) {
+          coursePoints.push({
+            name: placemark.name,
+            description: placemark.description,
+            latitude: point.lat,
+            longitude: point.lng,
+            color: "red",
+          });
+        }
+      }
+      mapEl.value = coursePoints;
+
+      const courseLines = courseData.placemarks
+        .filter((placemark) => placemark.lines.length || placemark.polygons.length)
+        .map((placemark) => ({
+          ...placemark,
+          points: [],
+        }));
+      drawPlacemarkLayer(map, courseLines, {
+        lineFallback: "#d9465f",
+        pointColor: "#d9465f",
+      });
+      courseBounds = collectBounds(courseData.placemarks);
+      if (courseBounds.length) {
+        map.fitBounds(courseBounds, { padding: [24, 24] });
+      }
+
+      await showTraffic(currentTime, false);
     };
 
     render().catch((error) => {
       console.error(error);
       descriptionEl.textContent = "KML の読み込みに失敗しました。";
+      setTrafficStatus("交通規制データの初期化に失敗しました。");
     });
   </script>
 </body>
