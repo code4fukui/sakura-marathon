@@ -180,6 +180,65 @@
     .source a {
       color: inherit;
     }
+
+    @media (max-width: 720px) {
+      main {
+        width: min(100%, calc(100% - 16px));
+        padding: 12px 0 24px;
+      }
+
+      h1 {
+        font-size: clamp(1.4rem, 7vw, 1.9rem);
+      }
+
+      .panel {
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 14px;
+      }
+
+      .lead,
+      .meta,
+      .toolbar label,
+      .status,
+      .source,
+      .footer {
+        font-size: 0.88rem;
+      }
+
+      .toolbar {
+        align-items: stretch;
+      }
+
+      .toolbar label {
+        width: 100%;
+      }
+
+      .toolbar select,
+      .toolbar button,
+      .toolbar .status {
+        width: 100%;
+      }
+
+      .timeline {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+      }
+
+      .time-chip {
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+
+      csv-map {
+        margin-top: 14px;
+        border-radius: 16px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -301,6 +360,10 @@
     };
 
     let currentTime = pickCurrentTrafficTime();
+
+    const updateMapHeight = () => {
+      mapEl.setAttribute("height", window.innerWidth <= 720 ? "56vh" : "72vh");
+    };
 
     const firstElement = (parent, name) => {
       if (!parent) return null;
@@ -600,6 +663,8 @@
     };
 
     const render = async () => {
+      updateMapHeight();
+      window.addEventListener("resize", updateMapHeight);
       setupTrafficUI();
 
       const response = await fetch(courseKmlPath);
